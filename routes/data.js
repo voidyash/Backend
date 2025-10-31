@@ -29,6 +29,12 @@ const writeData = (data) => {
 // ✅ GET DATA
 router.get("/get-data", (req, res) => {
     const data = readData();
+
+    // Prevent caching everywhere — browser, CDN, and proxy
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     res.json(data);
 });
 
