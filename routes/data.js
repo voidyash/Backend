@@ -13,7 +13,7 @@ const readData = () => {
     try {
         if (!fs.existsSync(dataPath)) {
             fs.mkdirSync(path.dirname(dataPath), { recursive: true });
-            fs.writeFileSync(dataPath, JSON.stringify({ founders: [], roster: [], creators: [] }, null, 2));
+            fs.writeFileSync(dataPath, JSON.stringify({ founders: [], roster: [], creators: [], achievements: [], highlights: [] }, null, 2));
         }
         return JSON.parse(fs.readFileSync(dataPath, "utf8"));
     } catch (err) {
