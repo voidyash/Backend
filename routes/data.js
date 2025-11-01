@@ -4,18 +4,23 @@ import path from "path";
 import { verifyToken } from "../utils/token.js";
 
 const router = express.Router();
-
-// Absolute and safe path resolution
 const dataPath = path.resolve("./data/siteData.json");
 
-// Helper functions
-const readData = () => {
+let cachedData = null;
+
+// Load data once into memory
+const loadData = () => {
     try {
         if (!fs.existsSync(dataPath)) {
             fs.mkdirSync(path.dirname(dataPath), { recursive: true });
-            fs.writeFileSync(dataPath, JSON.stringify({ founders: [], roster: [], creators: [], achievements: [], highlights: [] }, null, 2));
+            fs.writeFileSync(
+                dataPath,
+                JSON.stringify({ founders: [], roster: [], creators: [], achievements: [], highlights: [] }, null, 2)
+            );
         }
-        return JSON.parse(fs.readFileSync(dataPath, "utf8"));
+        const data = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+        cachedData = data;
+        return data;
     } catch (err) {
         console.error("❌ Error reading siteData.json:", err);
         return {};
@@ -23,19 +28,19 @@ const readData = () => {
 };
 
 const writeData = (data) => {
+    cachedData = data; // update memory cache
     fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), "utf8");
 };
 
-// ✅ GET DATA
+// Load once at startup
+loadData();
+
+// ✅ GET DATA — super fast now
 router.get("/get-data", (req, res) => {
-    const data = readData();
+    // Optional: allow browser caching too
+    res.setHeader("Cache-Control", "public, max-age=60"); // 1 minute
 
-    // Prevent caching everywhere — browser, CDN, and proxy
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-
-    res.json(data);
+    res.json(cachedData || loadData());
 });
 
 // ✅ UPDATE DATA
@@ -43,26 +48,20 @@ router.post("/update-data", (req, res) => {
     try {
         const { email, token, section, newData } = req.body;
 
-        if (!email || !token || !section) {
+        if (!email || !token || !section)
             return res.status(400).json({ error: "Missing fields" });
-        }
 
-        // Token validation
         const isValid = verifyToken(token, email);
-        if (!isValid) {
-            console.warn("❌ Invalid token for", email);
+        if (!isValid)
             return res.status(403).json({ error: "Invalid token" });
-        }
 
-        // Read current data
-        const current = readData();
+        const current = cachedData || loadData();
 
-        // Update section safely
-        // Clean up empty images
         current[section] = newData.map(item => ({
             ...item,
             image: item.image && item.image.trim() !== "" ? item.image : "/uploads/masked.png"
         }));
+
         writeData(current);
 
         res.json({ message: `${section} updated successfully!` });
