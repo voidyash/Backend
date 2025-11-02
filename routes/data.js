@@ -1,39 +1,47 @@
 import express from "express";
+import admin from "firebase-admin";
 import fs from "fs";
-import path from "path";
 import { verifyToken } from "../utils/token.js";
 
 const router = express.Router();
 
-// Absolute and safe path resolution
-const dataPath = path.resolve("./data/siteData.json");
+// 🔹 Load service account JSON
+let serviceAccount;
+if (process.env.FIREBASE_KEY) {
+    // Load from environment variable (Cloud Run)
+    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+} else {
+    // Load from local file (for local testing)
+    serviceAccount = JSON.parse(
+        fs.readFileSync(new URL("../serviceAccountKey.json",
+            import.meta.url))
+    );
+}
 
-// Helper functions
-const readData = () => {
-    try {
-        if (!fs.existsSync(dataPath)) {
-            fs.mkdirSync(path.dirname(dataPath), { recursive: true });
-            fs.writeFileSync(dataPath, JSON.stringify({ founders: [], roster: [], creators: [], achievements: [], highlights: [] }, null, 2));
-        }
-        return JSON.parse(fs.readFileSync(dataPath, "utf8"));
-    } catch (err) {
-        console.error("❌ Error reading siteData.json:", err);
-        return {};
-    }
-};
+// 🔹 Initialize Firebase Admin only once
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+    });
+}
 
-const writeData = (data) => {
-    fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), "utf8");
-};
+const db = admin.firestore();
+const siteDataRef = db.collection("data").doc("siteData");
 
 // ✅ GET DATA
-router.get("/get-data", (req, res) => {
-    const data = readData();
-    res.json(data);
+router.get("/get-data", async(req, res) => {
+    try {
+        const doc = await siteDataRef.get();
+        if (!doc.exists) return res.status(404).json({ error: "No data found" });
+        res.json(doc.data());
+    } catch (err) {
+        console.error("❌ Error fetching data:", err);
+        res.status(500).json({ error: "Failed to fetch data" });
+    }
 });
 
 // ✅ UPDATE DATA
-router.post("/update-data", (req, res) => {
+router.post("/update-data", async(req, res) => {
     try {
         const { email, token, section, newData } = req.body;
 
@@ -41,24 +49,23 @@ router.post("/update-data", (req, res) => {
             return res.status(400).json({ error: "Missing fields" });
         }
 
-        // Token validation
         const isValid = verifyToken(token, email);
         if (!isValid) {
             console.warn("❌ Invalid token for", email);
             return res.status(403).json({ error: "Invalid token" });
         }
 
-        // Read current data
-        const current = readData();
+        const doc = await siteDataRef.get();
+        const current = doc.exists ? doc.data() : {};
 
-        // Update section safely
-        // Clean up empty images
-        current[section] = newData.map(item => ({
+        current[section] = newData.map((item) => ({
             ...item,
-            image: item.image && item.image.trim() !== "" ? item.image : "/uploads/masked.png"
+            image: item.image && item.image.trim() !== "" ?
+                item.image :
+                "/uploads/masked.png",
         }));
-        writeData(current);
 
+        await siteDataRef.set(current, { merge: true });
         res.json({ message: `${section} updated successfully!` });
     } catch (err) {
         console.error("🔥 Error updating data:", err);
