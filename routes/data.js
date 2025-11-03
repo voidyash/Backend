@@ -4,9 +4,6 @@ import fs from "fs";
 import { verifyToken } from "../utils/token.js";
 import { getStorage } from "firebase-admin/storage";
 
-
-const storage = getStorage();
-const bucket = storage.bucket();
 const router = express.Router();
 
 // 🔹 Load service account JSON
@@ -26,8 +23,13 @@ if (process.env.FIREBASE_KEY) {
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
+        storageBucket: "astra-e3707.firebasestorage.app", // ✅ optional but explicit
     });
 }
+
+// ✅ Now that Firebase is initialized:
+const storage = getStorage();
+const bucket = storage.bucket();
 
 const db = admin.firestore();
 const siteDataRef = db.collection("data").doc("siteData");
@@ -66,7 +68,6 @@ router.post("/update-data", async(req, res) => {
         for (const item of newData) {
             let imageUrl = item.image;
 
-            // 🧠 If it's a base64 string, upload it
             if (imageUrl && imageUrl.startsWith("data:image")) {
                 const base64Data = imageUrl.split(";base64,").pop();
                 const fileName = `${section}/${Date.now()}_${Math.random()
@@ -79,10 +80,8 @@ router.post("/update-data", async(req, res) => {
                     metadata: { firebaseStorageDownloadTokens: Date.now().toString() },
                 });
 
-                // Make file public (optional — depends on your app’s needs)
                 await file.makePublic();
                 imageUrl = file.publicUrl();
-
                 console.log(`✅ Uploaded image for ${section}: ${imageUrl}`);
             }
 
