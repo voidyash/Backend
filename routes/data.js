@@ -22,7 +22,7 @@ if (process.env.FIREBASE_KEY) {
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: "astra-e3707.firebasestorage.com", // ✅ add your bucket here
+        storageBucket: "astra-e3707.appspot.com", // ✅ correct bucket domain
     });
 }
 
