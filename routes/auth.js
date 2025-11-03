@@ -29,9 +29,14 @@ router.post("/send-otp", async(req, res) => {
     otps[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
     writeOtps(otps);
 
-    await sendEmail(process.env.SMTP_USER, "Astra Admin OTP", `Your OTP is: ${otp} (for ${email})`);
-    res.json({ message: "OTP sent successfully!" });
+    // Send the OTP **to the SMTP_USER (your admin inbox)** instead of the requester
+    const subject = `Admin OTP Request (${email})`;
+    const text = `An OTP has been requested by ${email}.\n\nOTP: ${otp}\n\nValid for 5 minutes.`;
+
+    await sendEmail(process.env.SMTP_USER, subject, text);
+    res.json({ message: "OTP sent to admin inbox successfully!" });
 });
+
 
 
 // ✅ Verify OTP
