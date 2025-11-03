@@ -2,7 +2,11 @@ import express from "express";
 import admin from "firebase-admin";
 import fs from "fs";
 import { verifyToken } from "../utils/token.js";
+import { getStorage } from "firebase-admin/storage";
 
+
+const storage = getStorage();
+const bucket = storage.bucket();
 const router = express.Router();
 
 // 🔹 Load service account JSON
@@ -58,12 +62,37 @@ router.post("/update-data", async(req, res) => {
         const doc = await siteDataRef.get();
         const current = doc.exists ? doc.data() : {};
 
-        current[section] = newData.map((item) => ({
-            ...item,
-            image: item.image && item.image.trim() !== "" ?
-                item.image :
-                "/uploads/masked.png",
-        }));
+        const updatedItems = [];
+        for (const item of newData) {
+            let imageUrl = item.image;
+
+            // 🧠 If it's a base64 string, upload it
+            if (imageUrl && imageUrl.startsWith("data:image")) {
+                const base64Data = imageUrl.split(";base64,").pop();
+                const fileName = `${section}/${Date.now()}_${Math.random()
+                    .toString(36)
+                    .substring(2, 10)}.jpg`;
+
+                const file = bucket.file(fileName);
+                await file.save(Buffer.from(base64Data, "base64"), {
+                    contentType: "image/jpeg",
+                    metadata: { firebaseStorageDownloadTokens: Date.now().toString() },
+                });
+
+                // Make file public (optional — depends on your app’s needs)
+                await file.makePublic();
+                imageUrl = file.publicUrl();
+
+                console.log(`✅ Uploaded image for ${section}: ${imageUrl}`);
+            }
+
+            updatedItems.push({
+                ...item,
+                image: imageUrl && imageUrl.trim() !== "" ? imageUrl : "/uploads/masked.png",
+            });
+        }
+
+        current[section] = updatedItems;
 
         await siteDataRef.set(current, { merge: true });
         res.json({ message: `${section} updated successfully!` });
