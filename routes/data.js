@@ -2,7 +2,6 @@ import express from "express";
 import admin from "firebase-admin";
 import fs from "fs";
 import { verifyToken } from "../utils/token.js";
-import { getStorage } from "firebase-admin/storage";
 
 const router = express.Router();
 
@@ -19,17 +18,17 @@ if (process.env.FIREBASE_KEY) {
     );
 }
 
-// 🔹 Initialize Firebase Admin only once
+// 🔹 Initialize Firebase Admin FIRST
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: "astra-e3707.firebasestorage.app", // ✅ optional but explicit
+        storageBucket: "astra-e3707.firebasestorage.com", // ✅ add your bucket here
     });
 }
 
-// ✅ Now that Firebase is initialized:
-const storage = getStorage();
-const bucket = storage.bucket();
+// 🔹 Now import storage AFTER initialization
+import { getStorage } from "firebase-admin/storage";
+const bucket = getStorage().bucket();
 
 const db = admin.firestore();
 const siteDataRef = db.collection("data").doc("siteData");
@@ -82,6 +81,7 @@ router.post("/update-data", async(req, res) => {
 
                 await file.makePublic();
                 imageUrl = file.publicUrl();
+
                 console.log(`✅ Uploaded image for ${section}: ${imageUrl}`);
             }
 
@@ -92,8 +92,8 @@ router.post("/update-data", async(req, res) => {
         }
 
         current[section] = updatedItems;
-
         await siteDataRef.set(current, { merge: true });
+
         res.json({ message: `${section} updated successfully!` });
     } catch (err) {
         console.error("🔥 Error updating data:", err);
