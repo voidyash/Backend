@@ -4,8 +4,12 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import connectDB from "./config/db.js";
 
 dotenv.config();
+
+// ✅ Connect to Mongo Database
+connectDB();
 
 const app = express();
 
@@ -39,3 +43,12 @@ app.get("/", (_, res) =>
 // ✅ Server Start
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, "0.0.0.0", () => console.log(`✅ Server running on port ${PORT}`));
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
