@@ -1,44 +1,24 @@
 import express from "express";
-import admin from "firebase-admin";
 import fs from "fs";
+import path from "path";
 import { verifyToken } from "../utils/token.js";
+import SiteData from "../models/SiteData.js";
 
 const router = express.Router();
 
-// 🔹 Load service account JSON
-let serviceAccount;
-if (process.env.FIREBASE_KEY) {
-    // Load from environment variable (Cloud Run)
-    serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-} else {
-    // Load from local file (for local testing)
-    serviceAccount = JSON.parse(
-        fs.readFileSync(new URL("../serviceAccountKey.json",
-            import.meta.url))
-    );
-}
-
-// 🔹 Initialize Firebase Admin FIRST
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        storageBucket: "astra-e3707.appspot.com", // ✅ correct bucket domain
-    });
-}
-
-// 🔹 Now import storage AFTER initialization
-import { getStorage } from "firebase-admin/storage";
-const bucket = getStorage().bucket();
-
-const db = admin.firestore();
-const siteDataRef = db.collection("data").doc("siteData");
+// ✅ Create uploads directory if it doesn't exist
+const uploadDir = "./uploads";
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ✅ GET DATA
-router.get("/get-data", async(req, res) => {
+router.get("/get-data", async (req, res) => {
     try {
-        const doc = await siteDataRef.get();
-        if (!doc.exists) return res.status(404).json({ error: "No data found" });
-        res.json(doc.data());
+        const allData = await SiteData.find({});
+        const formattedData = {};
+        allData.forEach(doc => {
+            formattedData[doc.section] = doc.items;
+        });
+        res.json(formattedData);
     } catch (err) {
         console.error("❌ Error fetching data:", err);
         res.status(500).json({ error: "Failed to fetch data" });
@@ -46,7 +26,7 @@ router.get("/get-data", async(req, res) => {
 });
 
 // ✅ UPDATE DATA
-router.post("/update-data", async(req, res) => {
+router.post("/update-data", async (req, res) => {
     try {
         const { email, token, section, newData } = req.body;
 
@@ -60,27 +40,19 @@ router.post("/update-data", async(req, res) => {
             return res.status(403).json({ error: "Invalid token" });
         }
 
-        const doc = await siteDataRef.get();
-        const current = doc.exists ? doc.data() : {};
-
         const updatedItems = [];
         for (const item of newData) {
             let imageUrl = item.image;
 
             if (imageUrl && imageUrl.startsWith("data:image")) {
                 const base64Data = imageUrl.split(";base64,").pop();
-                const fileName = `${section}/${Date.now()}_${Math.random()
+                const fileName = `${Date.now()}_${Math.random()
                     .toString(36)
                     .substring(2, 10)}.jpg`;
+                const filePath = path.join(uploadDir, fileName);
 
-                const file = bucket.file(fileName);
-                await file.save(Buffer.from(base64Data, "base64"), {
-                    contentType: "image/jpeg",
-                    metadata: { firebaseStorageDownloadTokens: Date.now().toString() },
-                });
-
-                await file.makePublic();
-                imageUrl = file.publicUrl();
+                fs.writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+                imageUrl = `/uploads/${fileName}`;
 
                 console.log(`✅ Uploaded image for ${section}: ${imageUrl}`);
             }
@@ -91,8 +63,11 @@ router.post("/update-data", async(req, res) => {
             });
         }
 
-        current[section] = updatedItems;
-        await siteDataRef.set(current, { merge: true });
+        await SiteData.findOneAndUpdate(
+            { section },
+            { section, items: updatedItems },
+            { upsert: true, new: true }
+        );
 
         res.json({ message: `${section} updated successfully!` });
     } catch (err) {

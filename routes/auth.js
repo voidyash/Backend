@@ -8,6 +8,11 @@ dotenv.config();
 const router = express.Router();
 const otpPath = "./temp/otps.json";
 
+// Ensure temp directory exists
+if (!fs.existsSync("./temp")) {
+    fs.mkdirSync("./temp", { recursive: true });
+}
+
 const readOtps = () => {
     if (!fs.existsSync(otpPath)) fs.writeFileSync(otpPath, "{}");
     return JSON.parse(fs.readFileSync(otpPath, "utf8"));
@@ -16,21 +21,27 @@ const writeOtps = (data) => fs.writeFileSync(otpPath, JSON.stringify(data, null,
 
 // ✅ Send OTP
 router.post("/send-otp", async(req, res) => {
-    const { email } = req.body;
-    const allowedEmails = process.env.ADMIN_EMAILS ?
-        process.env.ADMIN_EMAILS.split(",") : [];
+    try {
+        const { email } = req.body;
+        const allowedEmails = process.env.ADMIN_EMAILS ?
+            process.env.ADMIN_EMAILS.split(",").map(e => e.trim()) : [];
 
-    if (!allowedEmails.includes(email)) {
-        return res.status(403).json({ error: "Unauthorized email" });
+        if (!allowedEmails.includes(email)) {
+            return res.status(403).json({ error: "Unauthorized email" });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otps = readOtps();
+        otps[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
+        writeOtps(otps);
+
+        await sendEmail(email, "Astra Admin OTP", `Your OTP is: ${otp}`);
+        console.log(`✅ OTP sent to ${email}: ${otp}`);
+        res.json({ message: "OTP sent successfully!" });
+    } catch (error) {
+        console.error("❌ Error sending OTP:", error);
+        res.status(500).json({ error: "Failed to send OTP", details: error.message });
     }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otps = readOtps();
-    otps[email] = { otp, expires: Date.now() + 5 * 60 * 1000 };
-    writeOtps(otps);
-
-    await sendEmail(process.env.SMTP_USER, "Astra Admin OTP", `Your OTP is: ${otp} (for ${email})`);
-    res.json({ message: "OTP sent successfully!" });
 });
 
 // ✅ Verify OTP
